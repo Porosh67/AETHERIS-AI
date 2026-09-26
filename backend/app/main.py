@@ -4,6 +4,8 @@ Primary REST API serving the dashboard and orchestration.
 """
 import json
 import logging
+from pathlib import Path
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -12,19 +14,26 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 from sqlmodel import Session, select
 
-from backend.app.core.config import get_settings
-from backend.app.db.database import create_db_and_tables, get_session, engine
-from backend.app.models.db_models import (
+from app.core.config import get_settings
+from app.db.database import create_db_and_tables, get_session, engine
+from app.models.db_models import (
     IncidentRecord,
     BobActivityLog,
     PatchRecord,
     EvidenceRecord,
     StateTransitionLog,
 )
-from backend.app.core.state_machine import IncidentState, is_terminal
+from app.core.state_machine import IncidentState, is_terminal
 from orchestration.incident_orchestrator import IncidentOrchestrator
 from agents.chaos_agent import ChaosAgent, APPROVED_INCIDENT_CATEGORIES, APPROVED_SERVICES
 from audit.evidence_signer import verify_evidence
+from app.services.incident_normalizer import (
+    normalize_custom_incident,
+    NormalizedIncident,
+    NormalizationFailure,
+    MAX_DESCRIPTION_LEN,
+    MAX_STACK_TRACE_LEN,
+)
 from backend.app.services.incident_normalizer import (
     normalize_custom_incident,
     NormalizedIncident,
@@ -387,13 +396,13 @@ def verify_evidence_endpoint(
 
 @app.get("/api/scenarios")
 def list_scenarios() -> list[dict]:
-    """Return the available demo scenarios from data files."""
     try:
-        with open("data/demo_scenarios.json", encoding="utf-8") as f:
+        file_path = BASE_DIR / "data" / "demo_scenarios.json"
+        with open(file_path, encoding="utf-8") as f:
             return json.load(f)
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error reading scenarios: {e}")
         return []
-
 
 @app.get("/api/taxonomy")
 def get_taxonomy() -> dict:
@@ -408,7 +417,8 @@ def get_taxonomy() -> dict:
 @app.get("/api/data/incidents")
 def get_data_incidents() -> list[dict]:
     try:
-        with open("data/incidents.json", encoding="utf-8") as f:
+        file_path = BASE_DIR / "data" / "incidents.json"
+        with open(file_path, encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return []
@@ -417,7 +427,8 @@ def get_data_incidents() -> list[dict]:
 @app.get("/api/data/telemetry")
 def get_telemetry() -> list[dict]:
     try:
-        with open("data/telemetry.json", encoding="utf-8") as f:
+        file_path = BASE_DIR / "data" / "telemetry.json"
+        with open(file_path, encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return []
@@ -426,11 +437,11 @@ def get_telemetry() -> list[dict]:
 @app.get("/api/data/snapshots")
 def get_snapshots() -> list[dict]:
     try:
-        with open("data/service_snapshots.json", encoding="utf-8") as f:
+        file_path = BASE_DIR / "data" / "service_snapshots.json"
+        with open(file_path, encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return []
-
 
 # ── Helpers ────────────────────────────────────────────────────────
 
