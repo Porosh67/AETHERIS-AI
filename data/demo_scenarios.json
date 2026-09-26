@@ -1,0 +1,48 @@
+[
+  {
+    "scenario_id": "DEMO-001",
+    "name": "Safe Repair — NULL_ERROR in orders-service",
+    "description": "A NullPointerException in the orders-service checkout flow is detected. Bob diagnoses, generates a patch, tests pass, audit passes, deterministic gate passes, canary is healthy, rollout succeeds.",
+    "incident_id": "INC-2024-001",
+    "expected_outcome": "ROLLED_OUT",
+    "expected_attempts": 1,
+    "fault_type": "NULL_ERROR",
+    "target_service": "orders-service",
+    "synthetic_patch": {
+      "file": "services/orders-service/checkout_controller.py",
+      "description": "Add null guard before accessing user_id field",
+      "diff_summary": "Line 87: if user_id is None: raise ValueError('user_id required')"
+    },
+    "gate_thresholds": {
+      "min_test_pass_rate": 0.95,
+      "max_security_risk": "MEDIUM",
+      "max_regression_risk": "LOW",
+      "canary_error_rate_threshold": 0.02,
+      "canary_latency_threshold_ms": 500
+    },
+    "synthetic": true
+  },
+  {
+    "scenario_id": "DEMO-002",
+    "name": "Controlled Failure — SCHEMA_DRIFT exhausts all 3 attempts → QUARANTINED",
+    "description": "A schema drift incident in payments-service triggers 3 repair attempts. Each attempt generates a patch that fails validation (simulated progressive failure). After attempt 3, the system quarantines and requires human review.",
+    "incident_id": "INC-2024-002",
+    "expected_outcome": "QUARANTINED",
+    "expected_attempts": 3,
+    "fault_type": "SCHEMA_DRIFT",
+    "target_service": "payments-service",
+    "synthetic_patch": {
+      "file": "services/payments-service/payment_processor.py",
+      "description": "Restore backward-compatible currency_code default (fails on all 3 attempts due to downstream schema mismatch)",
+      "diff_summary": "Line 112: currency_code = payload.get('currency_code', 'USD')"
+    },
+    "gate_thresholds": {
+      "min_test_pass_rate": 0.95,
+      "max_security_risk": "MEDIUM",
+      "max_regression_risk": "LOW",
+      "canary_error_rate_threshold": 0.02,
+      "canary_latency_threshold_ms": 500
+    },
+    "synthetic": true
+  }
+]

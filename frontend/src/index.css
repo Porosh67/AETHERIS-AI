@@ -1,0 +1,101 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-bg: #0a0d14;
+  --color-text: #f9fafb;
+  --color-scrollbar-track: #111827;
+  --color-scrollbar-thumb: #374151;
+}
+
+html.light {
+  --color-bg: #f8fafc;
+  --color-text: #0f172a;
+  --color-scrollbar-track: #e2e8f0;
+  --color-scrollbar-thumb: #cbd5e1;
+}
+
+@layer base {
+  html, body, #root {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-family: 'Inter', system-ui, sans-serif;
+    min-height: 100vh;
+  }
+
+  * { box-sizing: border-box; }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--color-scrollbar-track); }
+  ::-webkit-scrollbar-thumb { background: var(--color-scrollbar-thumb); border-radius: 3px; }
+}
+
+@layer components {
+  .card {
+    @apply bg-[#111827] border border-[#1f2937] rounded-xl;
+  }
+  .badge-critical { @apply bg-red-900/40 text-red-400 border border-red-800/50; }
+  .badge-high     { @apply bg-orange-900/40 text-orange-400 border border-orange-800/50; }
+  .badge-medium   { @apply bg-yellow-900/40 text-yellow-400 border border-yellow-800/50; }
+  .badge-low      { @apply bg-green-900/40 text-green-400 border border-green-800/50; }
+  .badge-info     { @apply bg-blue-900/40 text-blue-400 border border-blue-800/50; }
+
+  .state-pill {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border;
+  }
+  .btn-primary {
+    @apply bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-5 py-2.5 rounded-lg transition-colors;
+  }
+  .btn-secondary {
+    @apply bg-[#1f2937] hover:bg-[#374151] text-gray-200 font-medium px-5 py-2.5 rounded-lg border border-[#374151] transition-colors;
+  }
+}
+
+@layer utilities {
+  .font-mono { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+  .animate-pulse-dot { animation: pulse-dot 1.5s infinite; }
+
+  @keyframes scan {
+    0% { transform: translateY(-100%); }
+    100% { transform: translateY(100%); }
+  }
+  .animate-scan { animation: scan 2s linear infinite; }
+}
+
+/* ── Light mode ──────────────────────────────────────────────────
+   The rest of the app is written with hardcoded dark hex/gray
+   Tailwind classes. Rather than rewrite every component, we
+   override the specific classes actually used, scoped under
+   html.light, so the existing dark markup gets a real light
+   appearance instead of the toggle being a no-op. */
+html.light .bg-\[\#0a0d14\],
+html.light .bg-\[\#0a0d14\]\/90,
+html.light .bg-\[\#0d1117\] { background-color: #f8fafc !important; }
+
+html.light .bg-\[\#111827\] { background-color: #ffffff !important; }
+
+html.light .border-\[\#1f2937\] { border-color: #e2e8f0 !important; }
+
+html.light .text-white { color: #0f172a !important; }
+html.light .text-gray-100 { color: #1e293b !important; }
+html.light .text-gray-200 { color: #1e293b !important; }
+html.light .text-gray-300 { color: #334155 !important; }
+html.light .text-gray-400 { color: #475569 !important; }
+html.light .text-gray-500 { color: #64748b !important; }
+html.light .text-gray-600 { color: #94a3b8 !important; }
+html.light .text-gray-700 { color: #94a3b8 !important; }
+
+html.light .bg-gray-800 { background-color: #e2e8f0 !important; }
+html.light .bg-gray-900 { background-color: #f1f5f9 !important; }
+
+html.light .placeholder-gray-600::placeholder { color: #94a3b8 !important; }
+html.light .placeholder-gray-700::placeholder { color: #cbd5e1 !important; }
+
+html.light .btn-secondary { background-color: #e2e8f0; color: #1e293b; border-color: #cbd5e1; }
+html.light .btn-secondary:hover { background-color: #cbd5e1; }

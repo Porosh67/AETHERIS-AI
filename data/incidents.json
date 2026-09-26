@@ -1,0 +1,80 @@
+[
+  {
+    "incident_id": "INC-2024-001",
+    "title": "NullPointerException in orders-service checkout flow",
+    "category": "NULL_ERROR",
+    "severity": "CRITICAL",
+    "service": "orders-service",
+    "timestamp": "2024-01-15T08:23:11Z",
+    "error_trace": "java.lang.NullPointerException\n  at com.aetheris.orders.CheckoutController.processOrder(CheckoutController.java:87)\n  at com.aetheris.orders.CheckoutController.checkout(CheckoutController.java:45)\n  at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)\nCaused by: user_id field returned null from downstream identity resolver",
+    "affected_endpoint": "/api/v1/orders/checkout",
+    "error_rate_percent": 23.4,
+    "latency_p99_ms": 4200,
+    "synthetic": true
+  },
+  {
+    "incident_id": "INC-2024-002",
+    "title": "Schema drift: payments-service missing required field 'currency_code'",
+    "category": "SCHEMA_DRIFT",
+    "severity": "HIGH",
+    "service": "payments-service",
+    "timestamp": "2024-01-15T10:41:33Z",
+    "error_trace": "ValidationError: Field 'currency_code' is required but was not found in payload\n  at PaymentProcessor.validate(payment_processor.py:112)\n  at PaymentProcessor.charge(payment_processor.py:78)\nDeploy v2.3.1 removed backward-compatible currency_code default",
+    "affected_endpoint": "/api/v1/payments/charge",
+    "error_rate_percent": 45.1,
+    "latency_p99_ms": 850,
+    "synthetic": true
+  },
+  {
+    "incident_id": "INC-2024-003",
+    "title": "Latency regression in inventory-service stock lookup",
+    "category": "LATENCY_REGRESSION",
+    "severity": "HIGH",
+    "service": "inventory-service",
+    "timestamp": "2024-01-15T14:17:55Z",
+    "error_trace": "TimeoutError: Upstream call to inventory DB exceeded 5000ms SLA\n  at InventoryService.getStock(inventory_service.py:201)\nQuery plan regression detected: full table scan on product_id without index",
+    "affected_endpoint": "/api/v1/inventory/stock",
+    "error_rate_percent": 8.7,
+    "latency_p99_ms": 8900,
+    "synthetic": true
+  },
+  {
+    "incident_id": "INC-2024-004",
+    "title": "Rate limiter misconfiguration causing 429 storms in gateway",
+    "category": "RATE_LIMIT_MISCONFIGURATION",
+    "severity": "MEDIUM",
+    "service": "gateway-service",
+    "timestamp": "2024-01-15T16:03:22Z",
+    "error_trace": "HTTP 429 Too Many Requests\n  at GatewayRateLimiter.check(rate_limiter.py:67)\nConfig change in deploy v1.9.2 reduced per-user limit from 1000/min to 10/min",
+    "affected_endpoint": "/api/v1/*",
+    "error_rate_percent": 61.2,
+    "latency_p99_ms": 220,
+    "synthetic": true
+  },
+  {
+    "incident_id": "INC-2024-005",
+    "title": "Dependency failure: orders-service cannot reach payments-service",
+    "category": "DEPENDENCY_FAILURE",
+    "severity": "CRITICAL",
+    "service": "orders-service",
+    "timestamp": "2024-01-16T02:11:44Z",
+    "error_trace": "ConnectionRefusedError: [Errno 111] Connection refused\n  at PaymentsClient.charge(payments_client.py:34)\n  at OrdersService.completeOrder(orders_service.py:156)\nService discovery returned stale endpoint after payments-service pod restart",
+    "affected_endpoint": "/api/v1/orders/complete",
+    "error_rate_percent": 100.0,
+    "latency_p99_ms": 30000,
+    "synthetic": true
+  },
+  {
+    "incident_id": "INC-2024-006",
+    "title": "Resource exhaustion: inventory-service OOM under high load",
+    "category": "RESOURCE_EXHAUSTION",
+    "severity": "HIGH",
+    "service": "inventory-service",
+    "timestamp": "2024-01-16T09:45:12Z",
+    "error_trace": "MemoryError: Unable to allocate 512MB for batch stock computation\n  at InventoryBatchProcessor.compute(batch_processor.py:88)\nUnbounded in-memory accumulation of SKU records during bulk import",
+    "affected_endpoint": "/api/v1/inventory/bulk-update",
+    "error_rate_percent": 34.8,
+    "latency_p99_ms": 15600,
+    "synthetic": true
+  }
+]

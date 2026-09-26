@@ -1,0 +1,42 @@
+[
+  {
+    "metric": "requests_per_min",
+    "service": "orders-service",
+    "timestamps": ["08:00","08:05","08:10","08:15","08:20","08:25"],
+    "values":     [1820,   1834,   1810,   1799,   412,    88],
+    "unit": "req/min",
+    "synthetic": true
+  },
+  {
+    "metric": "p99_latency_ms",
+    "service": "orders-service",
+    "timestamps": ["08:00","08:05","08:10","08:15","08:20","08:25"],
+    "values":     [182,    190,    210,    850,    4200,   4800],
+    "unit": "ms",
+    "synthetic": true
+  },
+  {
+    "metric": "error_rate_percent",
+    "service": "orders-service",
+    "timestamps": ["08:00","08:05","08:10","08:15","08:20","08:25"],
+    "values":     [0.3,    0.4,    1.2,    8.9,    23.4,   31.1],
+    "unit": "%",
+    "synthetic": true
+  },
+  {
+    "metric": "error_rate_percent",
+    "service": "payments-service",
+    "timestamps": ["10:30","10:35","10:40","10:45","10:50"],
+    "values":     [0.8,    2.1,    12.4,   45.1,   48.3],
+    "unit": "%",
+    "synthetic": true
+  },
+  {
+    "metric": "p99_latency_ms",
+    "service": "inventory-service",
+    "timestamps": ["14:00","14:05","14:10","14:15","14:20"],
+    "values":     [95,     102,    680,    3200,   8900],
+    "unit": "ms",
+    "synthetic": true
+  }
+]
