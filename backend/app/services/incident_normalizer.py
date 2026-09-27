@@ -6,8 +6,9 @@ ready for the standard diagnosis pipeline.
 
 All user input is treated strictly as DATA — never executed as code.
 
-If the input cannot be normalized, returns a NEEDS_CLARIFICATION result
-with a clear reason. This does NOT consume a patch retry slot.
+If the input cannot be normalized (too vague / no actionable signal),
+returns a NEEDS_CLARIFICATION result with a clear reason.
+This does NOT consume a patch retry slot.
 """
 import re
 import hashlib
@@ -17,6 +18,9 @@ from typing import Optional
 # Input size limits — security: prevent oversized payloads
 MAX_DESCRIPTION_LEN = 4000
 MAX_STACK_TRACE_LEN = 8000
+
+# Minimum meaningful content length (after strip)
+MIN_MEANINGFUL_LEN = 12
 
 # Approved service names — user cannot inject arbitrary service names
 APPROVED_SERVICES = [
@@ -33,15 +37,17 @@ CATEGORY_SIGNALS: list[tuple[str, list[str]]] = [
         "null", "nullpointer", "npe", "nonetype", "none type",
         "attributeerror", "typeerror: 'none'", "is not defined",
         "undefined", "cannot read property", "null reference",
+        "nullpointerexception", "none has no attribute",
     ]),
     ("SCHEMA_DRIFT", [
         "schema", "missing field", "required field", "validation error",
         "field.*required", "unexpected field", "payload", "serialization",
-        "keyerror", "missing key", "required but not found",
+        "keyerror", "missing key", "required but not found", "currency_code",
+        "schema drift", "field not found",
     ]),
     ("LATENCY_REGRESSION", [
         "timeout", "latency", "slow", "p99", "sla", "response time",
-        "took too long", "deadline exceeded", "timed out",
+        "took too long", "deadline exceeded", "timed out", "high latency",
     ]),
     ("RATE_LIMIT_MISCONFIGURATION", [
         "429", "too many requests", "rate limit", "throttle", "quota exceeded",
@@ -73,6 +79,29 @@ SERVICE_SIGNALS: list[tuple[str, list[str]]] = [
     ("gateway-service",   ["gateway", "proxy", "api gateway", "rate limit", "routing"]),
 ]
 
+# Explicitly reject these as too vague / non-actionable
+VAGUE_PATTERNS = [
+    r"^error$",
+    r"^something\s+(is\s+)?broken$",
+    r"^broken$",
+    r"^bug$",
+    r"^issue$",
+    r"^problem$",
+    r"^fail(ed|ure)?$",
+    r"^test$",
+    r"^asdf+",
+    r"^qwerty",
+    r"^lorem\s+ipsum",
+    r"^xxx+$",
+    r"^aaa+$",
+    r"^hello$",
+    r"^hi$",
+    r"^help$",
+    r"^fix\s*(it|this|please)?$",
+    r"^not\s+working$",
+    r"^doesn'?t\s+work$",
+]
+
 
 @dataclass
 class NormalizedIncident:
@@ -100,13 +129,14 @@ class NormalizationFailure:
     suggestion: str = ""
 
 
-def _detect_category(text: str) -> str:
+def _detect_category(text: str) -> Optional[str]:
+    """Return category only if a real signal is found. None = no signal."""
     lower = text.lower()
     for category, signals in CATEGORY_SIGNALS:
         for signal in signals:
             if re.search(signal, lower):
                 return category
-    return "NULL_ERROR"  # conservative default
+    return None  # no longer defaults to NULL_ERROR
 
 
 def _detect_severity(text: str) -> str:
@@ -138,7 +168,6 @@ def _extract_title(description: str) -> str:
     if not lines:
         return "Custom incident"
     first = lines[0]
-    # Truncate to 120 chars
     return first[:120] + ("..." if len(first) > 120 else "")
 
 
@@ -147,9 +176,42 @@ def _sanitize_text(text: str, max_len: int) -> str:
     Sanitize user input: strip null bytes, control chars (except newline/tab),
     truncate to max_len. Treat as data only.
     """
-    # Remove null bytes and most control characters (keep \n \t \r)
     sanitized = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
     return sanitized[:max_len]
+
+
+def _is_too_vague(description: str, stack_trace: str) -> bool:
+    """
+    Return True if the input has no actionable technical signal.
+    Prevents fake success on garbage / one-word inputs.
+    """
+    combined = f"{description}\n{stack_trace}".strip().lower()
+    cleaned = re.sub(r'\s+', ' ', combined).strip()
+
+    # Too short
+    if len(cleaned) < MIN_MEANINGFUL_LEN:
+        return True
+
+    # Matches explicit vague patterns
+    for pat in VAGUE_PATTERNS:
+        if re.search(pat, cleaned, re.IGNORECASE):
+            return True
+
+    # Almost no alphanumeric content (e.g. "!!! ???")
+    alnum = re.sub(r'[^a-z0-9]', '', cleaned)
+    if len(alnum) < 8:
+        return True
+
+    # No category signal and no stack-trace-like content
+    has_category = _detect_category(combined) is not None
+    looks_like_trace = bool(re.search(
+        r'(at\s+\w+|Exception|Error:|Traceback|File\s+".*",\s+line\s+\d+|Caused by:)',
+        combined, re.IGNORECASE
+    ))
+    if not has_category and not looks_like_trace:
+        return True
+
+    return False
 
 
 def normalize_custom_incident(
@@ -164,6 +226,7 @@ def normalize_custom_incident(
     - No eval, exec, or subprocess calls
     - Input size is enforced
     - Output schema is fixed — user cannot inject new fields
+    - Vague / non-actionable input is rejected (NEEDS_CLARIFICATION)
 
     Returns NormalizedIncident on success, NormalizationFailure on failure.
     The failure does NOT consume a repair retry slot.
@@ -191,11 +254,34 @@ def normalize_custom_incident(
     clean_desc = _sanitize_text(description, MAX_DESCRIPTION_LEN)
     clean_trace = _sanitize_text(stack_trace, MAX_STACK_TRACE_LEN)
 
+    # ── Reject vague / garbage input (the main fix) ──────────────
+    if _is_too_vague(clean_desc, clean_trace):
+        return NormalizationFailure(
+            reason="Input is too vague or contains no actionable technical signal.",
+            suggestion=(
+                "Please provide a concrete error description, stack trace, or symptoms. "
+                "Examples: 'NullPointerException in orders-service checkout', "
+                "'payments-service missing required field currency_code', "
+                "'timeout on gateway after 5s'."
+            ),
+        )
+
     # Combined text for signal detection
     combined = f"{clean_desc}\n{clean_trace}"
 
     # ── Detection ────────────────────────────────────────────────
     category = _detect_category(combined)
+    if category is None:
+        # Still no category after passing vagueness check → ask for clarification
+        return NormalizationFailure(
+            reason="Could not determine a known incident category from the description.",
+            suggestion=(
+                "Add more technical detail (error type, service name, or stack trace). "
+                "Supported categories: NULL_ERROR, SCHEMA_DRIFT, LATENCY_REGRESSION, "
+                "RATE_LIMIT_MISCONFIGURATION, DEPENDENCY_FAILURE, RESOURCE_EXHAUSTION."
+            ),
+        )
+
     severity = _detect_severity(combined)
     service  = _detect_service(combined)
     title    = _extract_title(clean_desc)
