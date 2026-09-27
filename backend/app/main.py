@@ -5,8 +5,7 @@ Primary REST API serving the dashboard and orchestration.
 import json
 import logging
 from pathlib import Path
-# backend/ is the Vercel service root; data/ lives at backend/data/
-BASE_DIR = Path(__file__).resolve().parent.parent  # → backend/
+BASE_DIR = Path(__file__).resolve().parent.parent  # backend/
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -39,6 +38,202 @@ from app.services.incident_normalizer import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("aetheris.api")
 settings = get_settings()
+
+# ── Embedded demo data (no filesystem dependency on Vercel) ────────
+_DEMO_SCENARIOS = json.loads(r"""[
+  {
+    "scenario_id": "DEMO-001",
+    "name": "Safe Repair — NULL_ERROR in orders-service",
+    "description": "A NullPointerException in the orders-service checkout flow is detected. Bob diagnoses, generates a patch, tests pass, audit passes, deterministic gate passes, canary is healthy, rollout succeeds.",
+    "incident_id": "INC-2024-001",
+    "expected_outcome": "ROLLED_OUT",
+    "expected_attempts": 1,
+    "fault_type": "NULL_ERROR",
+    "target_service": "orders-service",
+    "synthetic_patch": {
+      "file": "services/orders-service/checkout_controller.py",
+      "description": "Add null guard before accessing user_id field",
+      "diff_summary": "Line 87: if user_id is None: raise ValueError('user_id required')"
+    },
+    "gate_thresholds": {
+      "min_test_pass_rate": 0.95,
+      "max_security_risk": "MEDIUM",
+      "max_regression_risk": "LOW",
+      "canary_error_rate_threshold": 0.02,
+      "canary_latency_threshold_ms": 500
+    },
+    "synthetic": true
+  },
+  {
+    "scenario_id": "DEMO-002",
+    "name": "Controlled Failure — SCHEMA_DRIFT exhausts all 3 attempts → QUARANTINED",
+    "description": "A schema drift incident in payments-service triggers 3 repair attempts. Each attempt generates a patch that fails validation (simulated progressive failure). After attempt 3, the system quarantines and requires human review.",
+    "incident_id": "INC-2024-002",
+    "expected_outcome": "QUARANTINED",
+    "expected_attempts": 3,
+    "fault_type": "SCHEMA_DRIFT",
+    "target_service": "payments-service",
+    "synthetic_patch": {
+      "file": "services/payments-service/payment_processor.py",
+      "description": "Restore backward-compatible currency_code default (fails on all 3 attempts due to downstream schema mismatch)",
+      "diff_summary": "Line 112: currency_code = payload.get('currency_code', 'USD')"
+    },
+    "gate_thresholds": {
+      "min_test_pass_rate": 0.95,
+      "max_security_risk": "MEDIUM",
+      "max_regression_risk": "LOW",
+      "canary_error_rate_threshold": 0.02,
+      "canary_latency_threshold_ms": 500
+    },
+    "synthetic": true
+  }
+]""")
+_DATA_INCIDENTS = json.loads(r"""[
+  {
+    "incident_id": "INC-2024-001",
+    "title": "NullPointerException in orders-service checkout flow",
+    "category": "NULL_ERROR",
+    "severity": "CRITICAL",
+    "service": "orders-service",
+    "timestamp": "2024-01-15T08:23:11Z",
+    "error_trace": "java.lang.NullPointerException\n  at com.aetheris.orders.CheckoutController.processOrder(CheckoutController.java:87)\n  at com.aetheris.orders.CheckoutController.checkout(CheckoutController.java:45)\n  at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)\nCaused by: user_id field returned null from downstream identity resolver",
+    "affected_endpoint": "/api/v1/orders/checkout",
+    "error_rate_percent": 23.4,
+    "latency_p99_ms": 4200,
+    "synthetic": true
+  },
+  {
+    "incident_id": "INC-2024-002",
+    "title": "Schema drift: payments-service missing required field 'currency_code'",
+    "category": "SCHEMA_DRIFT",
+    "severity": "HIGH",
+    "service": "payments-service",
+    "timestamp": "2024-01-15T10:41:33Z",
+    "error_trace": "ValidationError: Field 'currency_code' is required but was not found in payload\n  at PaymentProcessor.validate(payment_processor.py:112)\n  at PaymentProcessor.charge(payment_processor.py:78)\nDeploy v2.3.1 removed backward-compatible currency_code default",
+    "affected_endpoint": "/api/v1/payments/charge",
+    "error_rate_percent": 45.1,
+    "latency_p99_ms": 850,
+    "synthetic": true
+  },
+  {
+    "incident_id": "INC-2024-003",
+    "title": "Latency regression in inventory-service stock lookup",
+    "category": "LATENCY_REGRESSION",
+    "severity": "HIGH",
+    "service": "inventory-service",
+    "timestamp": "2024-01-15T14:17:55Z",
+    "error_trace": "TimeoutError: Upstream call to inventory DB exceeded 5000ms SLA\n  at InventoryService.getStock(inventory_service.py:201)\nQuery plan regression detected: full table scan on product_id without index",
+    "affected_endpoint": "/api/v1/inventory/stock",
+    "error_rate_percent": 8.7,
+    "latency_p99_ms": 8900,
+    "synthetic": true
+  },
+  {
+    "incident_id": "INC-2024-004",
+    "title": "Rate limiter misconfiguration causing 429 storms in gateway",
+    "category": "RATE_LIMIT_MISCONFIGURATION",
+    "severity": "MEDIUM",
+    "service": "gateway-service",
+    "timestamp": "2024-01-15T16:03:22Z",
+    "error_trace": "HTTP 429 Too Many Requests\n  at GatewayRateLimiter.check(rate_limiter.py:67)\nConfig change in deploy v1.9.2 reduced per-user limit from 1000/min to 10/min",
+    "affected_endpoint": "/api/v1/*",
+    "error_rate_percent": 61.2,
+    "latency_p99_ms": 220,
+    "synthetic": true
+  },
+  {
+    "incident_id": "INC-2024-005",
+    "title": "Dependency failure: orders-service cannot reach payments-service",
+    "category": "DEPENDENCY_FAILURE",
+    "severity": "CRITICAL",
+    "service": "orders-service",
+    "timestamp": "2024-01-16T02:11:44Z",
+    "error_trace": "ConnectionRefusedError: [Errno 111] Connection refused\n  at PaymentsClient.charge(payments_client.py:34)\n  at OrdersService.completeOrder(orders_service.py:156)\nService discovery returned stale endpoint after payments-service pod restart",
+    "affected_endpoint": "/api/v1/orders/complete",
+    "error_rate_percent": 100.0,
+    "latency_p99_ms": 30000,
+    "synthetic": true
+  },
+  {
+    "incident_id": "INC-2024-006",
+    "title": "Resource exhaustion: inventory-service OOM under high load",
+    "category": "RESOURCE_EXHAUSTION",
+    "severity": "HIGH",
+    "service": "inventory-service",
+    "timestamp": "2024-01-16T09:45:12Z",
+    "error_trace": "MemoryError: Unable to allocate 512MB for batch stock computation\n  at InventoryBatchProcessor.compute(batch_processor.py:88)\nUnbounded in-memory accumulation of SKU records during bulk import",
+    "affected_endpoint": "/api/v1/inventory/bulk-update",
+    "error_rate_percent": 34.8,
+    "latency_p99_ms": 15600,
+    "synthetic": true
+  }
+]""")
+_DATA_TELEMETRY = json.loads(r"""[
+  {
+    "metric": "requests_per_min",
+    "service": "orders-service",
+    "timestamps": ["08:00","08:05","08:10","08:15","08:20","08:25"],
+    "values":     [1820,   1834,   1810,   1799,   412,    88],
+    "unit": "req/min",
+    "synthetic": true
+  },
+  {
+    "metric": "p99_latency_ms",
+    "service": "orders-service",
+    "timestamps": ["08:00","08:05","08:10","08:15","08:20","08:25"],
+    "values":     [182,    190,    210,    850,    4200,   4800],
+    "unit": "ms",
+    "synthetic": true
+  },
+  {
+    "metric": "error_rate_percent",
+    "service": "orders-service",
+    "timestamps": ["08:00","08:05","08:10","08:15","08:20","08:25"],
+    "values":     [0.3,    0.4,    1.2,    8.9,    23.4,   31.1],
+    "unit": "%",
+    "synthetic": true
+  },
+  {
+    "metric": "error_rate_percent",
+    "service": "payments-service",
+    "timestamps": ["10:30","10:35","10:40","10:45","10:50"],
+    "values":     [0.8,    2.1,    12.4,   45.1,   48.3],
+    "unit": "%",
+    "synthetic": true
+  },
+  {
+    "metric": "p99_latency_ms",
+    "service": "inventory-service",
+    "timestamps": ["14:00","14:05","14:10","14:15","14:20"],
+    "values":     [95,     102,    680,    3200,   8900],
+    "unit": "ms",
+    "synthetic": true
+  }
+]""")
+_DATA_SNAPSHOTS = json.loads(r"""[
+  {
+    "snapshot_id": "SNAP-001",
+    "timestamp": "2024-01-15T08:20:00Z",
+    "services": {
+      "gateway-service": {"status": "healthy", "cpu_percent": 34.2, "memory_mb": 512, "requests_per_min": 4200, "error_rate_percent": 0.4, "p99_latency_ms": 85},
+      "orders-service":   {"status": "degraded","cpu_percent": 89.1, "memory_mb": 1024,"requests_per_min": 1800, "error_rate_percent": 23.4,"p99_latency_ms": 4200},
+      "payments-service": {"status": "healthy", "cpu_percent": 41.0, "memory_mb": 768, "requests_per_min": 1600, "error_rate_percent": 0.8, "p99_latency_ms": 230},
+      "inventory-service":{"status": "healthy", "cpu_percent": 28.5, "memory_mb": 480, "requests_per_min": 3100, "error_rate_percent": 0.2, "p99_latency_ms": 95}
+    },
+    "synthetic": true
+  },
+  {
+    "snapshot_id": "SNAP-002",
+    "timestamp": "2024-01-15T10:38:00Z",
+    "services": {
+      "gateway-service": {"status": "healthy", "cpu_percent": 38.7, "memory_mb": 520, "requests_per_min": 4100, "error_rate_percent": 0.3, "p99_latency_ms": 90},
+      "orders-service":   {"status": "healthy", "cpu_percent": 42.3, "memory_mb": 800, "requests_per_min": 1900, "error_rate_percent": 0.5, "p99_latency_ms": 180},
+      "payments-service": {"status": "critical","cpu_percent": 71.2, "memory_mb": 900, "requests_per_min": 1700, "error_rate_percent": 45.1,"p99_latency_ms": 850},
+      "inventory-service":{"status": "healthy", "cpu_percent": 30.1, "memory_mb": 490, "requests_per_min": 3000, "error_rate_percent": 0.1, "p99_latency_ms": 88}
+    },
+    "synthetic": true
+  }
+]""")
 
 
 @asynccontextmanager
@@ -391,13 +586,8 @@ def verify_evidence_endpoint(
 
 @app.get("/api/scenarios")
 def list_scenarios() -> list[dict]:
-    try:
-        file_path = BASE_DIR / "data" / "demo_scenarios.json"
-        with open(file_path, encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        logger.error(f"Error reading scenarios: {e}")
-        return []
+    return _DEMO_SCENARIOS
+
 
 @app.get("/api/taxonomy")
 def get_taxonomy() -> dict:
@@ -411,32 +601,18 @@ def get_taxonomy() -> dict:
 
 @app.get("/api/data/incidents")
 def get_data_incidents() -> list[dict]:
-    try:
-        file_path = BASE_DIR / "data" / "incidents.json"
-        with open(file_path, encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return []
+    return _DATA_INCIDENTS
 
 
 @app.get("/api/data/telemetry")
 def get_telemetry() -> list[dict]:
-    try:
-        file_path = BASE_DIR / "data" / "telemetry.json"
-        with open(file_path, encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return []
+    return _DATA_TELEMETRY
 
 
 @app.get("/api/data/snapshots")
 def get_snapshots() -> list[dict]:
-    try:
-        file_path = BASE_DIR / "data" / "service_snapshots.json"
-        with open(file_path, encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return []
+    return _DATA_SNAPSHOTS
+
 
 # ── Helpers ────────────────────────────────────────────────────────
 
