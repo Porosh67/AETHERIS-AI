@@ -14,16 +14,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 from sqlmodel import Session, select
 
-from backend.app.core.config import get_settings
-from backend.app.db.database import create_db_and_tables, get_session, engine
-from backend.app.models.db_models import (
+from .core.config import get_settings
+from .db.database import create_db_and_tables, get_session, engine
+from .models.db_models import (
     IncidentRecord,
     BobActivityLog,
     PatchRecord,
     EvidenceRecord,
     StateTransitionLog,
 )
-from backend.app.core.state_machine import IncidentState, is_terminal
+from .core.state_machine import IncidentState, is_terminal
 from orchestration.incident_orchestrator import IncidentOrchestrator
 from agents.chaos_agent import ChaosAgent, APPROVED_INCIDENT_CATEGORIES, APPROVED_SERVICES
 from audit.evidence_signer import verify_evidence

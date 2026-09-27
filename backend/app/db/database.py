@@ -2,7 +2,7 @@
 AETHERIS AI — Database engine + session management
 """
 from sqlmodel import SQLModel, create_engine, Session
-from backend.app.core.config import get_settings
+from ..core.config import get_settings
 
 settings = get_settings()
 
