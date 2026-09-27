@@ -220,11 +220,16 @@ export default function Dashboard() {
       // Create + run in ONE request (avoids Vercel SQLite /tmp isolation)
       const created = await createIncident(payload)
       const pk = created.data.id
+      const d = created.data
       setScenarioPk(pk)
-      setIncident(created.data)
+      setIncident(d)
+      if (d._activity) setActivity(d._activity)
+      if (d._patches) setPatches(d._patches)
+      if (d._transitions) setTransitions(d._transitions)
+      if (d._evidence) setEvidence(d._evidence)
       navigate(`/dashboard/${pk}`)
-      // Final poll for activity/patches/evidence
-      setTimeout(() => pollIncident(), 300)
+      // Extra poll in case same instance still has DB rows
+      setTimeout(() => pollIncident(), 500)
     } catch (e) {
       setError('Failed to start scenario: ' + (e.response?.data?.detail || e.message))
     } finally {
@@ -244,10 +249,15 @@ export default function Dashboard() {
         scenario_mode: 'custom',
       })
       const pk = created.data.id
+      const d = created.data
       setScenarioPk(pk)
-      setIncident(created.data)
+      setIncident(d)
+      if (d._activity) setActivity(d._activity)
+      if (d._patches) setPatches(d._patches)
+      if (d._transitions) setTransitions(d._transitions)
+      if (d._evidence) setEvidence(d._evidence)
       navigate(`/dashboard/${pk}`)
-      setTimeout(() => pollIncident(), 300)
+      setTimeout(() => pollIncident(), 500)
     } catch (e) {
       const detail = e.response?.data?.detail
       if (detail?.error === 'NEEDS_CLARIFICATION') {

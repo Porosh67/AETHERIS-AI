@@ -46,6 +46,75 @@ _PATCH_CACHE: dict[str, list] = {}
 _TRANSITION_CACHE: dict[str, list] = {}
 _EVIDENCE_CACHE: dict[str, dict] = {}
 
+
+def _hydrate_caches(session, incident_pk: str) -> dict:
+    """Load incident + related rows into memory caches (for serverless)."""
+    record = session.get(IncidentRecord, incident_pk)
+    if not record:
+        return {}
+    result = _incident_dict(record)
+    _INCIDENT_CACHE[incident_pk] = result
+    try:
+        acts = session.exec(
+            select(BobActivityLog)
+            .where(BobActivityLog.incident_pk == incident_pk)
+            .order_by(BobActivityLog.timestamp)
+        ).all()
+        _ACTIVITY_CACHE[incident_pk] = [
+            {
+                "id": a.id,
+                "event_type": a.event_type,
+                "message": a.message,
+                "detail": a.detail,
+                "timestamp": a.timestamp.isoformat() if a.timestamp else None,
+            }
+            for a in acts
+        ]
+    except Exception as e:
+        logger.warning(f"cache activity: {e}")
+    try:
+        patches = session.exec(
+            select(PatchRecord)
+            .where(PatchRecord.incident_pk == incident_pk)
+            .order_by(PatchRecord.attempt_num)
+        ).all()
+        _PATCH_CACHE[incident_pk] = [_patch_dict(p) for p in patches]
+    except Exception as e:
+        logger.warning(f"cache patches: {e}")
+    try:
+        trans = session.exec(
+            select(StateTransitionLog)
+            .where(StateTransitionLog.incident_pk == incident_pk)
+            .order_by(StateTransitionLog.timestamp)
+        ).all()
+        _TRANSITION_CACHE[incident_pk] = [
+            {
+                "from_state": t.from_state,
+                "to_state": t.to_state,
+                "reason": t.reason,
+                "attempt_num": t.attempt_num,
+                "timestamp": t.timestamp.isoformat() if t.timestamp else None,
+            }
+            for t in trans
+        ]
+    except Exception as e:
+        logger.warning(f"cache transitions: {e}")
+    try:
+        ev = session.exec(
+            select(EvidenceRecord).where(EvidenceRecord.incident_pk == incident_pk)
+        ).first()
+        if ev:
+            _EVIDENCE_CACHE[incident_pk] = _evidence_dict(ev)
+    except Exception as e:
+        logger.warning(f"cache evidence: {e}")
+    # Attach related data onto response for single-shot UI
+    result["_activity"] = _ACTIVITY_CACHE.get(incident_pk, [])
+    result["_patches"] = _PATCH_CACHE.get(incident_pk, [])
+    result["_transitions"] = _TRANSITION_CACHE.get(incident_pk, [])
+    result["_evidence"] = _EVIDENCE_CACHE.get(incident_pk)
+    return result
+
+
 # ── Embedded demo data (no filesystem dependency on Vercel) ────────
 _DEMO_SCENARIOS = json.loads(r"""[
   {
@@ -383,38 +452,7 @@ async def create_incident(
         orchestrator = IncidentOrchestrator(session)
         await orchestrator.run(record.id, scenario_mode=mode)
         session.refresh(record)
-        result = _incident_dict(record)
-        _INCIDENT_CACHE[record.id] = result
-        # cache related rows
-        try:
-            acts = session.exec(select(BobActivityLog).where(BobActivityLog.incident_pk == record.id)).all()
-            _ACTIVITY_CACHE[record.id] = [
-                {"id": a.id, "agent": a.agent, "action": a.action, "detail": a.detail,
-                 "timestamp": a.timestamp.isoformat() if a.timestamp else None}
-                for a in acts
-            ]
-        except Exception:
-            pass
-        try:
-            patches = session.exec(select(PatchRecord).where(PatchRecord.incident_pk == record.id)).all()
-            _PATCH_CACHE[record.id] = [_patch_dict(p) for p in patches]
-        except Exception:
-            pass
-        try:
-            trans = session.exec(select(StateTransitionLog).where(StateTransitionLog.incident_pk == record.id)).all()
-            _TRANSITION_CACHE[record.id] = [
-                {"from_state": t.from_state, "to_state": t.to_state,
-                 "timestamp": t.timestamp.isoformat() if t.timestamp else None}
-                for t in trans
-            ]
-        except Exception:
-            pass
-        try:
-            ev = session.exec(select(EvidenceRecord).where(EvidenceRecord.incident_pk == record.id)).first()
-            if ev:
-                _EVIDENCE_CACHE[record.id] = _evidence_dict(ev)
-        except Exception:
-            pass
+        result = _hydrate_caches(session, record.id)
 
     return result
 
@@ -482,9 +520,8 @@ async def create_custom_incident(
         orchestrator = IncidentOrchestrator(session)
         await orchestrator.run(record.id, scenario_mode=mode)
         session.refresh(record)
-        response = _incident_dict(record)
+        response = _hydrate_caches(session, record.id)
         response["source"] = "custom"
-        _INCIDENT_CACHE[record.id] = response
 
     return response
 
@@ -524,7 +561,9 @@ async def run_workflow(
     orchestrator = IncidentOrchestrator(session)
     result = await orchestrator.run(incident_pk, scenario_mode=req.scenario_mode)
     session.refresh(record)
-    _INCIDENT_CACHE[incident_pk] = _incident_dict(record)
+    hydrated = _hydrate_caches(session, incident_pk)
+    if isinstance(result, dict):
+        result.update({k: hydrated.get(k) for k in ("_activity", "_patches", "_transitions", "_evidence") if k in hydrated})
     return result
 
 
@@ -563,16 +602,20 @@ def get_activity(
         .where(BobActivityLog.incident_pk == incident_pk)
         .order_by(BobActivityLog.timestamp)
     ).all()
-    return [
-        {
-            "id":         log.id,
-            "event_type": log.event_type,
-            "message":    log.message,
-            "detail":     log.detail,
-            "timestamp":  log.timestamp.isoformat(),
-        }
-        for log in logs
-    ]
+    if logs:
+        data = [
+            {
+                "id":         log.id,
+                "event_type": log.event_type,
+                "message":    log.message,
+                "detail":     log.detail,
+                "timestamp":  log.timestamp.isoformat(),
+            }
+            for log in logs
+        ]
+        _ACTIVITY_CACHE[incident_pk] = data
+        return data
+    return _ACTIVITY_CACHE.get(incident_pk, [])
 
 
 # ── Patch Records ──────────────────────────────────────────────────
@@ -584,7 +627,11 @@ def get_patches(incident_pk: str, session: Session = Depends(get_session)) -> li
         .where(PatchRecord.incident_pk == incident_pk)
         .order_by(PatchRecord.attempt_num)
     ).all()
-    return [_patch_dict(p) for p in patches]
+    if patches:
+        data = [_patch_dict(p) for p in patches]
+        _PATCH_CACHE[incident_pk] = data
+        return data
+    return _PATCH_CACHE.get(incident_pk, [])
 
 
 # ── State Transitions ──────────────────────────────────────────────
@@ -596,16 +643,20 @@ def get_transitions(incident_pk: str, session: Session = Depends(get_session)) -
         .where(StateTransitionLog.incident_pk == incident_pk)
         .order_by(StateTransitionLog.timestamp)
     ).all()
-    return [
-        {
-            "from_state":  r.from_state,
-            "to_state":    r.to_state,
-            "reason":      r.reason,
-            "attempt_num": r.attempt_num,
-            "timestamp":   r.timestamp.isoformat(),
-        }
-        for r in rows
-    ]
+    if rows:
+        data = [
+            {
+                "from_state":  r.from_state,
+                "to_state":    r.to_state,
+                "reason":      r.reason,
+                "attempt_num": r.attempt_num,
+                "timestamp":   r.timestamp.isoformat(),
+            }
+            for r in rows
+        ]
+        _TRANSITION_CACHE[incident_pk] = data
+        return data
+    return _TRANSITION_CACHE.get(incident_pk, [])
 
 
 # ── Evidence ───────────────────────────────────────────────────────
@@ -615,9 +666,13 @@ def get_evidence(incident_pk: str, session: Session = Depends(get_session)) -> d
     ev = session.exec(
         select(EvidenceRecord).where(EvidenceRecord.incident_pk == incident_pk)
     ).first()
-    if not ev:
-        raise HTTPException(status_code=404, detail="Evidence not yet available")
-    return _evidence_dict(ev)
+    if ev:
+        data = _evidence_dict(ev)
+        _EVIDENCE_CACHE[incident_pk] = data
+        return data
+    if incident_pk in _EVIDENCE_CACHE:
+        return _EVIDENCE_CACHE[incident_pk]
+    raise HTTPException(status_code=404, detail="Evidence not yet available")
 
 
 @app.post("/api/incidents/{incident_pk}/evidence/verify")
