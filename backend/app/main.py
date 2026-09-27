@@ -39,6 +39,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("aetheris.api")
 settings = get_settings()
 
+# ── In-memory cache (survives warm serverless instances; fixes SQLite /tmp isolation) ──
+_INCIDENT_CACHE: dict[str, dict] = {}
+_ACTIVITY_CACHE: dict[str, list] = {}
+_PATCH_CACHE: dict[str, list] = {}
+_TRANSITION_CACHE: dict[str, list] = {}
+_EVIDENCE_CACHE: dict[str, dict] = {}
+
 # ── Embedded demo data (no filesystem dependency on Vercel) ────────
 _DEMO_SCENARIOS = json.loads(r"""[
   {
@@ -270,6 +277,8 @@ class CreateIncidentRequest(BaseModel):
     service:      str
     error_trace:  str
     scenario_id:  str | None = None
+    auto_run:     bool = False
+    scenario_mode: str = "pass"
 
     @field_validator("category")
     @classmethod
@@ -304,6 +313,8 @@ class CustomIncidentRequest(BaseModel):
     """
     description: str
     stack_trace: str = ""
+    auto_run: bool = False
+    scenario_mode: str = "custom"
 
     @field_validator("description")
     @classmethod
@@ -344,7 +355,7 @@ def list_incidents(session: Session = Depends(get_session)) -> list[dict]:
 
 
 @app.post("/api/incidents", status_code=201)
-def create_incident(
+async def create_incident(
     req: CreateIncidentRequest,
     session: Session = Depends(get_session),
 ) -> dict:
@@ -363,7 +374,49 @@ def create_incident(
     session.add(record)
     session.commit()
     session.refresh(record)
-    return _incident_dict(record)
+    result = _incident_dict(record)
+    _INCIDENT_CACHE[record.id] = result
+
+    # Run workflow in the SAME request (avoids SQLite /tmp isolation across lambdas)
+    if req.auto_run:
+        mode = req.scenario_mode if req.scenario_mode in ("pass", "fail", "custom") else "pass"
+        orchestrator = IncidentOrchestrator(session)
+        await orchestrator.run(record.id, scenario_mode=mode)
+        session.refresh(record)
+        result = _incident_dict(record)
+        _INCIDENT_CACHE[record.id] = result
+        # cache related rows
+        try:
+            acts = session.exec(select(BobActivityLog).where(BobActivityLog.incident_pk == record.id)).all()
+            _ACTIVITY_CACHE[record.id] = [
+                {"id": a.id, "agent": a.agent, "action": a.action, "detail": a.detail,
+                 "timestamp": a.timestamp.isoformat() if a.timestamp else None}
+                for a in acts
+            ]
+        except Exception:
+            pass
+        try:
+            patches = session.exec(select(PatchRecord).where(PatchRecord.incident_pk == record.id)).all()
+            _PATCH_CACHE[record.id] = [_patch_dict(p) for p in patches]
+        except Exception:
+            pass
+        try:
+            trans = session.exec(select(StateTransitionLog).where(StateTransitionLog.incident_pk == record.id)).all()
+            _TRANSITION_CACHE[record.id] = [
+                {"from_state": t.from_state, "to_state": t.to_state,
+                 "timestamp": t.timestamp.isoformat() if t.timestamp else None}
+                for t in trans
+            ]
+        except Exception:
+            pass
+        try:
+            ev = session.exec(select(EvidenceRecord).where(EvidenceRecord.incident_pk == record.id)).first()
+            if ev:
+                _EVIDENCE_CACHE[record.id] = _evidence_dict(ev)
+        except Exception:
+            pass
+
+    return result
 
 
 @app.post("/api/incidents/custom", status_code=201)
@@ -422,15 +475,30 @@ async def create_custom_incident(
         "service_detected":  result.service,
         "raw_description":   result.raw_description[:200],
     }
+    _INCIDENT_CACHE[record.id] = response
+
+    if req.auto_run:
+        mode = req.scenario_mode if req.scenario_mode in ("pass", "fail", "custom") else "custom"
+        orchestrator = IncidentOrchestrator(session)
+        await orchestrator.run(record.id, scenario_mode=mode)
+        session.refresh(record)
+        response = _incident_dict(record)
+        response["source"] = "custom"
+        _INCIDENT_CACHE[record.id] = response
+
     return response
 
 
 @app.get("/api/incidents/{incident_pk}")
 def get_incident(incident_pk: str, session: Session = Depends(get_session)) -> dict:
     record = session.get(IncidentRecord, incident_pk)
-    if not record:
-        raise HTTPException(status_code=404, detail="Incident not found")
-    return _incident_dict(record)
+    if record:
+        d = _incident_dict(record)
+        _INCIDENT_CACHE[incident_pk] = d
+        return d
+    if incident_pk in _INCIDENT_CACHE:
+        return _INCIDENT_CACHE[incident_pk]
+    raise HTTPException(status_code=404, detail="Incident not found")
 
 
 @app.post("/api/incidents/{incident_pk}/run")
@@ -455,6 +523,8 @@ async def run_workflow(
 
     orchestrator = IncidentOrchestrator(session)
     result = await orchestrator.run(incident_pk, scenario_mode=req.scenario_mode)
+    session.refresh(record)
+    _INCIDENT_CACHE[incident_pk] = _incident_dict(record)
     return result
 
 

@@ -205,6 +205,7 @@ export default function Dashboard() {
     setError(null)
     setLoading(true)
     try {
+      const mode = scenario.expected_outcome === 'ROLLED_OUT' ? 'pass' : 'fail'
       const payload = {
         incident_id:  incidentData.incident_id,
         title:        incidentData.title,
@@ -213,21 +214,17 @@ export default function Dashboard() {
         service:      incidentData.service,
         error_trace:  incidentData.error_trace,
         scenario_id:  scenario.scenario_id,
+        auto_run:     true,
+        scenario_mode: mode,
       }
+      // Create + run in ONE request (avoids Vercel SQLite /tmp isolation)
       const created = await createIncident(payload)
       const pk = created.data.id
       setScenarioPk(pk)
       setIncident(created.data)
       navigate(`/dashboard/${pk}`)
-
-      // Kick off workflow (non-blocking — we'll poll for results)
-      const mode = scenario.expected_outcome === 'ROLLED_OUT' ? 'pass' : 'fail'
-      runWorkflow(pk, mode).then(r => {
-        // Workflow complete — final poll
-        pollIncident()
-      }).catch(e => {
-        setError('Workflow error: ' + (e.response?.data?.detail || e.message))
-      })
+      // Final poll for activity/patches/evidence
+      setTimeout(() => pollIncident(), 300)
     } catch (e) {
       setError('Failed to start scenario: ' + (e.response?.data?.detail || e.message))
     } finally {
@@ -240,17 +237,17 @@ export default function Dashboard() {
     setCustomError(null)
     setCustomSubmitting(true)
     try {
-      const created = await createCustomIncident({ description, stack_trace: stackTrace })
+      const created = await createCustomIncident({
+        description,
+        stack_trace: stackTrace,
+        auto_run: true,
+        scenario_mode: 'custom',
+      })
       const pk = created.data.id
       setScenarioPk(pk)
       setIncident(created.data)
       navigate(`/dashboard/${pk}`)
-
-      runWorkflow(pk, 'custom').then(() => {
-        pollIncident()
-      }).catch(e => {
-        setError('Workflow error: ' + (e.response?.data?.detail || e.message))
-      })
+      setTimeout(() => pollIncident(), 300)
     } catch (e) {
       const detail = e.response?.data?.detail
       if (detail?.error === 'NEEDS_CLARIFICATION') {
