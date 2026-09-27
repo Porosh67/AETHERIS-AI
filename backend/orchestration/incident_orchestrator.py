@@ -80,7 +80,8 @@ class IncidentOrchestrator:
     async def run(self, incident_pk: str, scenario_mode: str = "pass") -> dict[str, Any]:
         """
         Execute the full incident repair workflow.
-        scenario_mode: "pass" = safe repair demo, "fail" = controlled failure demo.
+        scenario_mode: "pass" = safe repair demo, "fail" = controlled failure demo,
+                       "custom" = free-text (SCHEMA_DRIFT → fail/quarantine, else pass).
         Returns final state and summary dict.
         """
         record = self._get_incident(incident_pk)
@@ -165,9 +166,13 @@ class IncidentOrchestrator:
             await self._transition(record, IncidentState.PATCH_TESTING, "Patch generated")
             self._bob("[BOB] Running tests", incident_pk)
 
-            test_scenario = scenario_mode if current_attempt >= record.max_attempts else scenario_mode
-            # On controlled-failure scenario, always fail tests
-            effective_test_scenario = "fail" if scenario_mode == "fail" else "pass"
+            # custom + SCHEMA_DRIFT → fail (quarantine after 3), same as controlled-failure demo
+            if scenario_mode == "fail" or (
+                scenario_mode == "custom" and record.category == "SCHEMA_DRIFT"
+            ):
+                effective_test_scenario = "fail"
+            else:
+                effective_test_scenario = "pass"
 
             test_result = await run_tests(
                 category=record.category,
@@ -351,7 +356,12 @@ class IncidentOrchestrator:
             await self._transition(record, IncidentState.CANARY_RUNNING, "Canary starting")
             self._bob("[BOB] Canary validation started", incident_pk)
 
-            canary_scenario = "fail" if scenario_mode == "fail" else "pass"  # custom → pass (only controlled-failure demo fails canary)
+            canary_scenario = (
+                "fail"
+                if scenario_mode == "fail"
+                or (scenario_mode == "custom" and record.category == "SCHEMA_DRIFT")
+                else "pass"
+            )
             canary_result = await self.canary_validator.run_canary(
                 scenario=canary_scenario,
                 service=record.service,
