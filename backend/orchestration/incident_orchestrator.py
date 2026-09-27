@@ -351,7 +351,7 @@ class IncidentOrchestrator:
             await self._transition(record, IncidentState.CANARY_RUNNING, "Canary starting")
             self._bob("[BOB] Canary validation started", incident_pk)
 
-            canary_scenario = "pass" if scenario_mode == "pass" else "fail"
+            canary_scenario = "fail" if scenario_mode == "fail" else "pass"  # custom → pass (only controlled-failure demo fails canary)
             canary_result = await self.canary_validator.run_canary(
                 scenario=canary_scenario,
                 service=record.service,

@@ -2,7 +2,10 @@
   "services": {
     "frontend": {
       "root": "frontend/",
-      "framework": "vite"
+      "framework": "vite",
+      "rewrites": [
+        { "source": "/((?!assets/).*)", "destination": "/" }
+      ]
     },
     "backend": {
       "root": "backend/",
@@ -17,6 +20,14 @@
     {
       "source": "/health",
       "destination": { "service": "backend" }
+    },
+    {
+      "source": "/dashboard",
+      "destination": { "service": "frontend", "path": "/" }
+    },
+    {
+      "source": "/dashboard/(.*)",
+      "destination": { "service": "frontend", "path": "/" }
     },
     {
       "source": "/(.*)",
