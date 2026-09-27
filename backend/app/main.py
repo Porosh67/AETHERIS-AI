@@ -5,7 +5,8 @@ Primary REST API serving the dashboard and orchestration.
 import json
 import logging
 from pathlib import Path
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+# backend/ is the Vercel service root; data/ lives at backend/data/
+BASE_DIR = Path(__file__).resolve().parent.parent  # → backend/
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -27,7 +28,7 @@ from .core.state_machine import IncidentState, is_terminal
 from orchestration.incident_orchestrator import IncidentOrchestrator
 from agents.chaos_agent import ChaosAgent, APPROVED_INCIDENT_CATEGORIES, APPROVED_SERVICES
 from audit.evidence_signer import verify_evidence
-from .services.incident_normalizer import (
+from app.services.incident_normalizer import (
     normalize_custom_incident,
     NormalizedIncident,
     NormalizationFailure,
@@ -57,6 +58,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins_list,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

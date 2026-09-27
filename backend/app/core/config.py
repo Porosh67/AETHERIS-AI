@@ -19,7 +19,10 @@ class Settings(BaseSettings):
     # Serverless (Vercel) note: only /tmp is writable at runtime, and it does
     # not persist across cold starts. Set DATABASE_URL=sqlite:////tmp/aetheris.db
     # as a Vercel env var for deployment; local dev keeps the default file.
-    database_url: str = os.environ.get("DATABASE_URL", "sqlite:///./aetheris.db")
+    database_url: str = os.environ.get(
+        "DATABASE_URL",
+        "sqlite:////tmp/aetheris.db" if os.environ.get("VERCEL") else "sqlite:///./aetheris.db",
+    )
     max_repair_attempts: int = 3
     inference_timeout_seconds: int = 15
 
@@ -33,7 +36,7 @@ class Settings(BaseSettings):
     evidence_signing_key: str = "dev-only-signing-key-change-in-prod"
 
     # CORS
-    allowed_origins: str = "http://localhost:5173,http://localhost:3000"
+    allowed_origins: str = "http://localhost:5173,http://localhost:3000,https://aetheris-ai-six.vercel.app,https://aetheris-ai-level-infinite.vercel.app"
 
     @property
     def allowed_origins_list(self) -> list[str]:
