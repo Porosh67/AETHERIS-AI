@@ -12,7 +12,7 @@ import logging
 from typing import Any
 
 from agents.base_agent import BaseAgent
-from backend.app.services.inference_gateway import InferenceError
+from app.services.inference_gateway import InferenceError
 
 logger = logging.getLogger("aetheris.agent.diagnosis")
 

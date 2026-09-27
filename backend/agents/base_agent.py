@@ -3,7 +3,7 @@ AETHERIS AI — Agent Base Class
 All agents inherit from this to share logging + inference access.
 """
 import logging
-from backend.app.services.inference_gateway import InferenceGateway, get_inference_gateway
+from app.services.inference_gateway import InferenceGateway, get_inference_gateway
 
 
 class BaseAgent:

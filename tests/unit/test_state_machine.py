@@ -3,7 +3,7 @@ AETHERIS AI — State Machine Tests
 Tests valid transitions, invalid transitions, terminal states, retry logic.
 """
 import pytest
-from backend.app.core.state_machine import (
+from app.core.state_machine import (
     IncidentState,
     validate_transition,
     is_terminal,

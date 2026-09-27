@@ -27,7 +27,7 @@ from .core.state_machine import IncidentState, is_terminal
 from orchestration.incident_orchestrator import IncidentOrchestrator
 from agents.chaos_agent import ChaosAgent, APPROVED_INCIDENT_CATEGORIES, APPROVED_SERVICES
 from audit.evidence_signer import verify_evidence
-from backend.app.services.incident_normalizer import (
+from app.services.incident_normalizer import (
     normalize_custom_incident,
     NormalizedIncident,
     NormalizationFailure,

@@ -21,7 +21,7 @@ import json
 import logging
 from dataclasses import dataclass
 
-from backend.app.core.config import get_settings
+from app.core.config import get_settings
 
 logger = logging.getLogger("aetheris.evidence_hmac")
 

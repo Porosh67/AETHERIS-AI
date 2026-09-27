@@ -9,7 +9,7 @@ from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
 
 # Use in-memory SQLite for tests
-from backend.app.models.db_models import (
+from app.models.db_models import (
     IncidentRecord, BobActivityLog, PatchRecord, EvidenceRecord, StateTransitionLog
 )
 
@@ -24,11 +24,11 @@ def make_test_app():
     SQLModel.metadata.create_all(test_engine)
 
     # Patch the database module to use test engine
-    import backend.app.db.database as db_module
+    import app.db.database as db_module
     original_engine = db_module.engine
     db_module.engine = test_engine
 
-    from backend.app.main import app
+    from app.main import app
     client = TestClient(app, raise_server_exceptions=True)
 
     def cleanup():

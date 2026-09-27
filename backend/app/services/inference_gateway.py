@@ -23,7 +23,7 @@ from typing import Any
 
 import httpx
 
-from backend.app.core.config import get_settings
+from app.core.config import get_settings
 
 logger = logging.getLogger("aetheris.inference")
 

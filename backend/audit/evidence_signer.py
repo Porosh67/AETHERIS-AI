@@ -13,7 +13,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from backend.app.core.config import get_settings
+from app.core.config import get_settings
 
 SIGNING_KEY_ID = "aetheris-hmac-sha256-v1"
 

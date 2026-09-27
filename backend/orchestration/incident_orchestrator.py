@@ -35,21 +35,21 @@ from audit.evidence_signer import (
     SIGNING_KEY_ID,
 )
 from audit.evidence_hmac import tag_evidence, verify_all_evidence_inputs
-from backend.app.core.state_machine import (
+from app.core.state_machine import (
     IncidentState,
     validate_transition,
     is_terminal,
     is_retry_allowed,
     InvalidTransitionError,
 )
-from backend.app.models.db_models import (
+from app.models.db_models import (
     IncidentRecord,
     StateTransitionLog,
     PatchRecord,
     EvidenceRecord,
     BobActivityLog,
 )
-from backend.app.core.config import get_settings
+from app.core.config import get_settings
 
 logger = logging.getLogger("aetheris.orchestrator")
 settings = get_settings()
