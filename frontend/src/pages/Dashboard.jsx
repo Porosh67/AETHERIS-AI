@@ -169,23 +169,41 @@ export default function Dashboard() {
   const pollIncident = useCallback(async () => {
     if (!scenarioPk) return
     try {
-      const [incR, actR, patR, trR] = await Promise.all([
+      // allSettled: one 404 must not wipe the whole UI
+      const results = await Promise.allSettled([
         getIncident(scenarioPk),
         getActivity(scenarioPk),
         getPatches(scenarioPk),
         getTransitions(scenarioPk),
       ])
-      setIncident(incR.data)
-      setActivity(actR.data)
-      setPatches(patR.data)
-      setTransitions(trR.data)
+      const [incR, actR, patR, trR] = results
 
-      // Load evidence when complete
-      if (['ROLLED_OUT','QUARANTINED'].includes(incR.data.state)) {
-        try {
-          const evR = await getEvidence(scenarioPk)
-          setEvidence(evR.data)
-        } catch {}
+      if (incR.status === 'fulfilled' && incR.value?.data) {
+        setIncident(prev => {
+          const next = incR.value.data
+          // Never regress a terminal state to empty/missing
+          if (prev && ['ROLLED_OUT', 'QUARANTINED'].includes(prev.state) &&
+              !['ROLLED_OUT', 'QUARANTINED'].includes(next.state)) {
+            return prev
+          }
+          return next
+        })
+        if (['ROLLED_OUT', 'QUARANTINED'].includes(incR.value.data.state)) {
+          try {
+            const evR = await getEvidence(scenarioPk)
+            if (evR?.data) setEvidence(evR.data)
+          } catch {}
+        }
+      }
+      // Only overwrite activity/patches/transitions when non-empty
+      if (actR.status === 'fulfilled' && Array.isArray(actR.value?.data) && actR.value.data.length > 0) {
+        setActivity(actR.value.data)
+      }
+      if (patR.status === 'fulfilled' && Array.isArray(patR.value?.data) && patR.value.data.length > 0) {
+        setPatches(patR.value.data)
+      }
+      if (trR.status === 'fulfilled' && Array.isArray(trR.value?.data) && trR.value.data.length > 0) {
+        setTransitions(trR.value.data)
       }
     } catch (e) {
       console.error('Poll error', e)
@@ -194,9 +212,13 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!scenarioPk) return
+    // If we already have terminal state from create+auto_run response, soft-poll only once
+    if (isComplete) {
+      pollIncident()
+      return
+    }
     pollIncident()
-    // Poll every 1s while running, 5s when complete
-    const interval = setInterval(pollIncident, isComplete ? 5000 : 1000)
+    const interval = setInterval(pollIncident, 1500)
     return () => clearInterval(interval)
   }, [scenarioPk, isComplete, pollIncident])
 
