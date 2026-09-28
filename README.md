@@ -436,3 +436,5 @@ Session logs are in [`bob_sessions/SESSION-001.md`](bob_sessions/SESSION-001.md)
 
 *AETHERIS AI — Built with IBM Bob IDE — IBM Bob Hackathon 2.0*
 *All demo data is synthetic. No real client/production data used.*
+## License
+MIT — see [LICENSE](./LICENSE)
